@@ -57,7 +57,16 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-
+// --- NEW: Get All Colleges Route ---
+app.get('/api/colleges', async (req, res) => {
+  try {
+    const allColleges = await pool.query("SELECT * FROM colleges");
+    res.json(allColleges.rows);
+  } catch (error) {
+    console.error("Error fetching colleges:", error);
+    res.status(500).json({ message: "Server error while fetching colleges." });
+  }
+});
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);
