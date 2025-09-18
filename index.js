@@ -1,63 +1,62 @@
+// This must be the first line to load our secret database key
+require('dotenv').config();
+
+// Import all our tools
 const express = require('express');
-const bcrypt = require('bcrypt'); // <-- Import bcrypt
+const bcrypt = require('bcrypt');
+const { Pool } = require('pg');
+const cors = require('cors'); // <-- The CORS fix
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-// This is a crucial piece of "middleware".
-// It tells Express to automatically parse incoming JSON data for us.
-app.use(express.json());
-
-// --- Our Routes ---
-
-// 1. Health Check Route (from before)
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: "ok",
-    message: "CARIVIO API is running!"
-  });
+// --- Database Connection ---
+// This uses the DATABASE_URL from your .env file locally, or from Render's environment variables when live
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
 });
 
-// 2. NEW: User Registration Route
+// --- Middleware ---
+app.use(cors()); // <-- Use CORS to allow frontend access
+app.use(express.json()); // To parse incoming JSON data
+
+// =================================================================
+// --- API Routes ---
+// =================================================================
+
+// 1. Health Check Route
+app.get('/api/health', (req, res) => {
+  res.json({ status: "ok", message: "CARIVIO API is running!" });
+});
+
+// 2. User Registration Route (with REAL database logic)
 app.post('/api/auth/register', async (req, res) => {
-  // Get the user data from the incoming request body
   const { fullName, email, password, phoneNumber } = req.body;
 
-  // --- Input Validation (simple version) ---
   if (!email || !password || !fullName) {
-    // If any key data is missing, send a "Bad Request" error
     return res.status(400).json({ message: "Full name, email, and password are required." });
   }
 
   try {
-    // --- Password Hashing ---
-    const saltRounds = 10; // A standard value for the "work factor"
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    // --- Database Logic (Simulated) ---
-    // In the future, we would save the user to the database here.
-    // For now, let's just log it to the console to prove it works.
-    console.log("New user to be created:");
-    console.log({
-      fullName,
-      email,
-      passwordHash, // We log the HASHED password, not the original!
-      phoneNumber
-    });
-
-    // Send a success response back to the client
+    const passwordHash = await bcrypt.hash(password, 10);
+    const newUser = await pool.query(
+      "INSERT INTO users (full_name, email, password_hash, phone_number) VALUES ($1, $2, $3, $4) RETURNING id, full_name, email, role",
+      [fullName, email, passwordHash, phoneNumber]
+    );
     res.status(201).json({
       message: "User registered successfully!",
-      user: { fullName, email } // Don't send the password hash back
+      user: newUser.rows[0]
     });
-
   } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ message: "An account with this email already exists." });
+    }
     console.error("Error during registration:", error);
     res.status(500).json({ message: "Server error during registration." });
   }
 });
 
-// --- NEW: Get All Colleges Route ---
+// 3. Get All Colleges Route
 app.get('/api/colleges', async (req, res) => {
   try {
     const allColleges = await pool.query("SELECT * FROM colleges");
@@ -67,7 +66,10 @@ app.get('/api/colleges', async (req, res) => {
     res.status(500).json({ message: "Server error while fetching colleges." });
   }
 });
-// Start the server
+
+// =================================================================
+// --- Start The Server ---
+// =================================================================
 app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
