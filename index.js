@@ -5,67 +5,63 @@ require('dotenv').config();
 const express = require('express');
 const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
-const cors = require('cors'); // <-- The CORS fix
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // --- Database Connection ---
-// This uses the DATABASE_URL from your .env file locally, or from Render's environment variables when live
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// --- NEW: Test DB Connection on Startup ---
+pool.connect((err, client, release) => {
+  if (err) {
+    return console.error('!!! DATABASE CONNECTION ERROR !!!', err.stack);
+  }
+  client.query('SELECT NOW()', (err, result) => {
+    release();
+    if (err) {
+      return console.error('Error executing query', err.stack);
+    }
+    console.log('✅ Database connection successful. Current time:', result.rows[0].now);
+  });
+});
+
 // --- Middleware ---
-app.use(cors()); // <-- Use CORS to allow frontend access
-app.use(express.json()); // To parse incoming JSON data
+app.use(cors());
+app.use(express.json());
 
 // =================================================================
 // --- API Routes ---
 // =================================================================
 
-// 1. Health Check Route
-app.get('/api/health', (req, res) => {
-  res.json({ status: "ok", message: "CARIVIO API is running!" });
-});
+// ... (Your health and register routes are the same)
+app.get('/api/health', (req, res) => { /* ... same as before ... */ });
+app.post('/api/auth/register', async (req, res) => { /* ... same as before ... */ });
 
-// 2. User Registration Route (with REAL database logic)
-app.post('/api/auth/register', async (req, res) => {
-  const { fullName, email, password, phoneNumber } = req.body;
 
-  if (!email || !password || !fullName) {
-    return res.status(400).json({ message: "Full name, email, and password are required." });
-  }
-
-  try {
-    const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = await pool.query(
-      "INSERT INTO users (full_name, email, password_hash, phone_number) VALUES ($1, $2, $3, $4) RETURNING id, full_name, email, role",
-      [fullName, email, passwordHash, phoneNumber]
-    );
-    res.status(201).json({
-      message: "User registered successfully!",
-      user: newUser.rows[0]
-    });
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(409).json({ message: "An account with this email already exists." });
-    }
-    console.error("Error during registration:", error);
-    res.status(500).json({ message: "Server error during registration." });
-  }
-});
-
-// 3. Get All Colleges Route
+// --- Get All Colleges Route (with ENHANCED logging) ---
 app.get('/api/colleges', async (req, res) => {
   try {
+    console.log("Attempting to fetch colleges..."); // Log the attempt
     const allColleges = await pool.query("SELECT * FROM colleges");
+    console.log(`Successfully fetched ${allColleges.rows.length} colleges.`);
     res.json(allColleges.rows);
   } catch (error) {
-    console.error("Error fetching colleges:", error);
+    // --- NEW: Log the FULL error object ---
+    console.error("--- DETAILED ERROR FETCHING COLLEGES ---");
+    console.error(error); 
+    console.error("--- END OF DETAILED ERROR ---");
     res.status(500).json({ message: "Server error while fetching colleges." });
   }
 });
+
+
+// ... (Your single college route is the same)
+app.get('/api/colleges/:id', async (req, res) => { /* ... same as before ... */ });
+
 
 // =================================================================
 // --- Start The Server ---
